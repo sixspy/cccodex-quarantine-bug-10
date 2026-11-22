@@ -61,7 +61,7 @@ def run_reconcile(db_path: str | None = None) -> dict:
 
 
 def dashboard(db_path: str | None = None) -> dict:
-    from app.services.dedupe_fp_audit import audit_summary as _dedupe_fp_audit
+    from app.services import dedupe_ledger
     with get_db(db_path) as conn:
         return {
             "batches": conn.execute("SELECT COUNT(*) AS c FROM capture_batches").fetchone()["c"],
@@ -81,5 +81,5 @@ def dashboard(db_path: str | None = None) -> dict:
                 "SELECT COUNT(*) AS c FROM policy_rules WHERE enabled=1"
             ).fetchone()["c"],
             "audits": conn.execute("SELECT COUNT(*) AS c FROM audit_events").fetchone()["c"],
-            "dedupe_fp_audit": _dedupe_fp_audit(db_path),
+            "dedupe": dedupe_ledger.stats(),
         }

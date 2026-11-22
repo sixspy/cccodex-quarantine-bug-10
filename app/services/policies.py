@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from app.db import get_db
 from app.services import audit as audit_svc
+from app.services import dedupe_ledger
 from app.services import quarantine as quarantine_svc
 from app.services.errors import ServiceError
 
@@ -99,6 +100,7 @@ def apply_to_batch(batch_id: int, db_path: str | None = None) -> dict:
     entered = 0
     closed = 0
     observed = 0
+    refused = 0
     for item in items:
         matched = None
         for rule in rules:
@@ -112,10 +114,14 @@ def apply_to_batch(batch_id: int, db_path: str | None = None) -> dict:
             bin_id = bins.get(bin_code)
             if not bin_id:
                 continue
-            quarantine_svc.enter_item(
-                item["id"], bin_id, f"规则{matched['rule_code']}自动入舱", db_path
-            )
-            entered += 1
+            try:
+                quarantine_svc.enter_item(
+                    item["id"], bin_id, f"规则{matched['rule_code']}自动入舱", db_path
+                )
+                entered += 1
+            except dedupe_ledger.DedupeRefused:
+                # 同源件重复抓取：拒重已落账，本批继续处理其余条目。
+                refused += 1
         elif matched["action"] == "直接关闭":
             with get_db(db_path) as conn:
                 conn.execute(
@@ -130,7 +136,7 @@ def apply_to_batch(batch_id: int, db_path: str | None = None) -> dict:
         "批内套规则",
         "capture_batch",
         batch_id,
-        f"入舱{entered}/关闭{closed}/观察{observed}",
+        f"入舱{entered}/拒重{refused}/关闭{closed}/观察{observed}",
         db_path=db_path,
     )
     return {
@@ -138,5 +144,6 @@ def apply_to_batch(batch_id: int, db_path: str | None = None) -> dict:
         "entered": entered,
         "closed": closed,
         "observed": observed,
+        "refused": refused,
         "rules_used": len(rules),
     }

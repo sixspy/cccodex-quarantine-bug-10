@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.db import _meta_get, _meta_set, ensure_db, get_db
+from app.services.dedupe_ledger import fingerprint
 
 
 def seed_if_needed(db_path: str | None = None) -> None:
@@ -95,9 +96,31 @@ def seed_if_needed(db_path: str | None = None) -> None:
             )
             item_ids.append(cur.lastrowid)
         bin_a = conn.execute("SELECT id FROM quarantine_bins WHERE bin_code='BIN-A'").fetchone()["id"]
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO quarantine_rows(bin_id, item_id, reason, status) VALUES (?,?,?,?)",
             (bin_a, item_ids[9], "历史缺字段样例", "待复核"),
+        )
+        # 种子历史的入舱行同样补一笔去重落点，保证徽标 / 落点 / 指纹三方咬合。
+        hist_item = conn.execute(
+            """
+            SELECT i.*, b.source_name
+            FROM capture_items i JOIN capture_batches b ON b.id=i.batch_id
+            WHERE i.id=?
+            """,
+            (item_ids[9],),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO dedupe_ledger(
+              source_key, capture_item_id, quarantine_row_id, fingerprint, fate, collision_of
+            ) VALUES (?, ?, ?, ?, '已落舱', NULL)
+            """,
+            (
+                f"{hist_item['source_name']}::{hist_item['item_key']}",
+                hist_item["id"],
+                cur.lastrowid,
+                fingerprint(hist_item["payload"]),
+            ),
         )
         row_id = conn.execute("SELECT id FROM quarantine_rows ORDER BY id DESC LIMIT 1").fetchone()["id"]
         conn.execute(
@@ -122,9 +145,4 @@ def seed_if_needed(db_path: str | None = None) -> None:
             VALUES ('system', '种子初始化', 'lab', 0, '首次启动写入样例')
             """
         )
-        try:
-            from app.services.dedupe_fp import seed_skew
-            seed_skew(db_path)
-        except Exception:
-            pass
         _meta_set(conn, "seeded", "1")

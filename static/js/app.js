@@ -7,6 +7,7 @@ import { renderReconcile } from './pages/reconcile.js';
 import { renderSources } from './pages/sources.js';
 import { renderPolicies } from './pages/policies.js';
 import { renderAudit } from './pages/audit.js';
+import { renderDedupe } from './pages/dedupe.js';
 import { renderSettings } from './pages/settings.js';
 
 const view = document.getElementById('view');
@@ -19,6 +20,7 @@ const pages = {
   sources: renderSources,
   policies: renderPolicies,
   audit: renderAudit,
+  dedupe: renderDedupe,
   settings: renderSettings,
 };
 
@@ -26,7 +28,7 @@ async function refreshDash() {
   try {
     const d = await api('/api/dashboard');
     document.getElementById('dashHint').textContent =
-      ` · 批次${d.batches} · 源站${d.sites} · 待复核${d.pending_rows} · 回炉${d.rework_queue} · 审计${d.audits}`;
+      ` · 批次${d.batches} · 源站${d.sites} · 待复核${d.pending_rows} · 回炉${d.rework_queue} · 审计${d.audits} · 撞件${d.dedupe ? d.dedupe.collision_count : 0}`;
   } catch (e) {
     if (String(e.message).includes('未登录')) location.href = '/login';
   }

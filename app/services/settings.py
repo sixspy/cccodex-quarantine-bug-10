@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.db import get_db
+from app.services import dedupe_ledger
 from app.services.errors import ServiceError
 
 
@@ -12,9 +13,16 @@ def list_settings(db_path: str | None = None) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def dedupe_policy(db_path: str | None = None) -> dict:
+    """去重口径：只读展示，不接受写改（去重形态已钉为独立账册）。"""
+    return dict(dedupe_ledger.policy())
+
+
 def update_setting(key: str, value: str, db_path: str | None = None) -> dict:
     if not key or value is None:
         raise ServiceError("参数不完整")
+    if key.startswith("dedupe"):
+        raise ServiceError("去重口径只读，不可改写", 403)
     with get_db(db_path) as conn:
         row = conn.execute(
             "SELECT key, value, label FROM lab_settings WHERE key=?", (key,)

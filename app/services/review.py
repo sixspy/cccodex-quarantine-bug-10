@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.db import get_db
 from app.services import audit as audit_svc
+from app.services import dedupe_ledger
 from app.services.errors import ServiceError
 
 
@@ -42,6 +43,9 @@ def decide(
         ).fetchone()
         if not row or row["status"] != "待复核":
             raise ServiceError("隔离行不可裁决")
+        if decision == "放行":
+            # 放行同样联验去重落点，避免绕过回炉直接吃双份。
+            dedupe_ledger.verify_retry(conn, row["item_id"])
         conn.execute(
             """
             UPDATE review_tickets

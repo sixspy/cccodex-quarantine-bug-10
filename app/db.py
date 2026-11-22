@@ -123,6 +123,23 @@ CREATE TABLE IF NOT EXISTS lab_settings (
   label TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS dedupe_ledger (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_key TEXT NOT NULL,
+  capture_item_id INTEGER NOT NULL REFERENCES capture_items(id),
+  quarantine_row_id INTEGER REFERENCES quarantine_rows(id),
+  fingerprint TEXT NOT NULL,
+  fate TEXT NOT NULL CHECK (fate IN ('已落舱','拒重')),
+  collision_of INTEGER REFERENCES dedupe_ledger(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_dedupe_landing
+  ON dedupe_ledger(source_key) WHERE fate='已落舱';
+
+CREATE INDEX IF NOT EXISTS ix_dedupe_collision
+  ON dedupe_ledger(source_key, fate);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -141,12 +158,15 @@ def ensure_db() -> Path:
 
 
 @contextmanager
-def get_db(db_path: str | Path | None = None):
+def get_db(db_path: str | Path | None = None, immediate: bool = False):
     path = Path(db_path) if db_path else Config.DATABASE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    if immediate:
+        # 去重写入路径串行化：先拿写锁，避免同源件两路争抢互相盖掉落点。
+        conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
         conn.commit()

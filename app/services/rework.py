@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.db import get_db
 from app.services import audit as audit_svc
+from app.services import dedupe_ledger
 from app.services import settings as settings_svc
 from app.services.errors import ServiceError
 
@@ -10,7 +11,7 @@ def list_jobs(db_path: str | None = None) -> list[dict]:
     with get_db(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT j.*, i.item_key, r.reason, b.bin_code
+            SELECT j.*, i.id AS item_id, i.item_key, r.reason, b.bin_code
             FROM rework_jobs j
             JOIN quarantine_rows r ON r.id=j.row_id
             JOIN capture_items i ON i.id=r.item_id
@@ -18,7 +19,17 @@ def list_jobs(db_path: str | None = None) -> list[dict]:
             ORDER BY j.id DESC
             """
         ).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            data = dict(r)
+            status = dedupe_ledger.item_status(conn, data.pop("item_id"))
+            data["dedupe_badge"] = status["badge"]
+            data["collision_count"] = status["collision_count"]
+            data["dedupe_landing"] = status["landing"]
+            data["landing_row"] = status["landing_row"]
+            data["fingerprint_match"] = status["fingerprint_match"]
+            out.append(data)
+        return out
 
 
 def run_job(job_id: int, succeed: bool = True, db_path: str | None = None) -> dict:
@@ -28,10 +39,15 @@ def run_job(job_id: int, succeed: bool = True, db_path: str | None = None) -> di
             raise ServiceError("回炉任务不存在", 404)
         if job["status"] not in ("排队", "失败"):
             raise ServiceError("任务状态不可执行")
-        from app.services.dedupe_fp import commit_action, gate_allows_pipeline
-        commit_action({"job_id": job_id}, db_path)
+        row = conn.execute(
+            "SELECT * FROM quarantine_rows WHERE id=?", (job["row_id"],)
+        ).fetchone()
+        if not row:
+            raise ServiceError("隔离行不存在", 404)
+        # 回炉联验去重账册：无落点 / 徽标对不上 / 指纹对不上，一律拒绝回炉。
+        dedupe_ledger.verify_retry(conn, row["item_id"])
         max_attempt = int(settings_svc.get_value("rework_max_attempt", "3", db_path) or "3")
-        if job["attempt"] > max_attempt and not gate_allows_pipeline(db_path):
+        if job["attempt"] > max_attempt:
             raise ServiceError("已超过回炉最大次数")
         conn.execute(
             """
@@ -49,9 +65,6 @@ def run_job(job_id: int, succeed: bool = True, db_path: str | None = None) -> di
                 """,
                 (job_id,),
             )
-            row = conn.execute(
-                "SELECT * FROM quarantine_rows WHERE id=?", (job["row_id"],)
-            ).fetchone()
             conn.execute(
                 "UPDATE quarantine_rows SET status='已放行' WHERE id=?", (row["id"],)
             )

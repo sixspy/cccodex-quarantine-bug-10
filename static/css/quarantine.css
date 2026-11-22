@@ -34,6 +34,12 @@ th, td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: lef
 .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #234652; font-size: .78rem; }
 .chip.bad { background: #5a2f2a; }
 .chip.ok { background: #1f4d3d; }
+.fp { display: inline-block; font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: .76rem; color: #a8d8c8; background: #10252d; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+.fp.bad { color: #ff9a86; border-color: #5a2f2a; }
+.fp-strip { display: flex; gap: 6px; flex-wrap: wrap; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+.kv dt { color: var(--muted); font-size: .86rem; }
+.kv dd { margin: 0; }
 h2 { margin: 0 0 10px; font-size: 1.15rem; }
 .stat-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .stat { background: #10252d; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }

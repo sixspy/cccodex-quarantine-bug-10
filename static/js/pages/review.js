@@ -4,7 +4,7 @@ export async function renderReview(el) {
   const data = await api('/api/tickets');
   el.innerHTML = `
     <div class="card">
-      <h2>复核放行</h2> <span class="chip" data-thick="dedupe_fp">去重已亮</span>
+      <h2>复核放行</h2>
       <table>
         <thead><tr><th>单号</th><th>条目</th><th>舱</th><th>裁决</th><th>操作</th></tr></thead>
         <tbody>

@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from app.db import get_db
 from app.services import audit as audit_svc
+from app.services import dedupe_ledger
 from app.services.errors import ServiceError
+
+
+def _collision_count(conn, source_name: str) -> int:
+    return conn.execute(
+        """
+        SELECT COUNT(*) AS c FROM dedupe_ledger d
+        JOIN capture_items i ON i.id=d.capture_item_id
+        JOIN capture_batches b ON b.id=i.batch_id
+        WHERE b.source_name=? AND d.fate='拒重'
+        """,
+        (source_name,),
+    ).fetchone()["c"]
 
 
 def list_batches(db_path: str | None = None) -> list[dict]:
@@ -13,7 +26,12 @@ def list_batches(db_path: str | None = None) -> list[dict]:
             FROM capture_batches ORDER BY id DESC
             """
         ).fetchall()
-        return [dict(r) for r in rows]
+        out = []
+        for r in rows:
+            data = dict(r)
+            data["collision_count"] = _collision_count(conn, data["source_name"])
+            out.append(data)
+        return out
 
 
 def get_batch(batch_id: int, db_path: str | None = None) -> dict:
@@ -31,7 +49,18 @@ def get_batch(batch_id: int, db_path: str | None = None) -> dict:
             (batch_id,),
         ).fetchall()
         data = dict(row)
-        data["items"] = [dict(i) for i in items]
+        data["items"] = []
+        for i in items:
+            item = dict(i)
+            status = dedupe_ledger.status_for(
+                conn, row["source_name"], item["item_key"], item["payload"]
+            )
+            item["dedupe_badge"] = status["badge"]
+            item["collision_count"] = status["collision_count"]
+            item["dedupe_landing"] = status["landing"]
+            item["landing_row"] = status["landing_row"]
+            data["items"].append(item)
+        data["collision_count"] = _collision_count(conn, row["source_name"])
         return data
 
 

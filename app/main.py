@@ -18,9 +18,7 @@ from app.services import reconcile as reconcile_svc
 from app.services import review as review_svc
 from app.services import rework as rework_svc
 from app.services import settings as settings_svc
-from app.services import dedupe_fp as dedupe_fp_svc
-from app.services import dedupe_fp_cutover as dedupe_fp_cutover_svc
-from app.services import dedupe_fp_dualwrite as dedupe_fp_dual_svc
+from app.services import dedupe_ledger as dedupe_svc
 from app.services import sources as sources_svc
 from app.services.errors import ServiceError
 
@@ -230,7 +228,12 @@ def create_app():
 
         def settings_list(request):
             _require(request)
-            return _json({"items": settings_svc.list_settings()})
+            return _json(
+                {
+                    "items": settings_svc.list_settings(),
+                    "dedupe_policy": settings_svc.dedupe_policy(),
+                }
+            )
 
         def settings_update(request):
             _require(request)
@@ -309,37 +312,20 @@ def create_app():
             return _json(policies_svc.apply_to_batch(int(body.get("batch_id") or 0)))
 
 
-        def dedupe_fp_dash(request):
+        def dedupe_dash(request):
             _require(request)
-            return _json(dedupe_fp_cutover_svc.board())
+            return _json(dedupe_svc.dashboard())
 
-        def dedupe_fp_commit(request):
+        def dedupe_rows(request):
             _require(request)
-            body = _read_json(request)
-            return _json(dedupe_fp_svc.commit_action(body))
+            return _json({"items": dedupe_svc.list_rows()})
 
-        def dedupe_fp_half(request):
+        def dedupe_item(request):
             _require(request)
-            return _json(dedupe_fp_svc.reconcile_display())
-
-        def dedupe_fp_snap(request):
-            _require(request)
-            return _json(dedupe_fp_svc.snapshot())
-
-        def dedupe_fp_cutover(request):
-            _require(request)
-            body = _read_json(request)
-            return _json(
-                dedupe_fp_cutover_svc.append_cutover(
-                    int(body.get("ref_id") or 0),
-                    str(body.get("note") or "抓取去重"),
-                )
-            )
-
-        def dedupe_fp_dual(request):
-            _require(request)
-            body = _read_json(request)
-            return _json(dedupe_fp_dual_svc.apply_dualwrite(str(body.get("note") or "抓取去重")))
+            status = dedupe_svc.status_for_item(int(request.matchdict["id"]))
+            if not status:
+                raise ServiceError("条目不存在", 404)
+            return _json(status)
 
         def audits_list(request):
             _require(request)
@@ -379,12 +365,9 @@ def create_app():
         config.add_route("rule_enable", "/api/rules/{id}/enable")
         config.add_route("rule_apply", "/api/rules/apply")
         config.add_route("audits", "/api/audits")
-        config.add_route("dedupe_fp_dash", "/api/dedupe_fp/dash")
-        config.add_route("dedupe_fp_commit", "/api/dedupe_fp/commit")
-        config.add_route("dedupe_fp_half", "/api/dedupe_fp/half")
-        config.add_route("dedupe_fp_snap", "/api/dedupe_fp/snap")
-        config.add_route("dedupe_fp_cutover", "/api/dedupe_fp/cutover")
-        config.add_route("dedupe_fp_dual", "/api/dedupe_fp/dual")
+        config.add_route("dedupe_dash", "/api/dedupe/dash")
+        config.add_route("dedupe_rows", "/api/dedupe/rows")
+        config.add_route("dedupe_item", "/api/dedupe/items/{id}")
 
 
         config.add_view(root, route_name="root")
@@ -423,12 +406,9 @@ def create_app():
         config.add_view(wrap(rule_enable), route_name="rule_enable", request_method="POST")
         config.add_view(wrap(rule_apply), route_name="rule_apply", request_method="POST")
         config.add_view(wrap(audits_list), route_name="audits", request_method="GET")
-        config.add_view(wrap(dedupe_fp_dash), route_name="dedupe_fp_dash", request_method="GET")
-        config.add_view(wrap(dedupe_fp_commit), route_name="dedupe_fp_commit", request_method="POST")
-        config.add_view(wrap(dedupe_fp_half), route_name="dedupe_fp_half", request_method="POST")
-        config.add_view(wrap(dedupe_fp_snap), route_name="dedupe_fp_snap", request_method="GET")
-        config.add_view(wrap(dedupe_fp_cutover), route_name="dedupe_fp_cutover", request_method="POST")
-        config.add_view(wrap(dedupe_fp_dual), route_name="dedupe_fp_dual", request_method="POST")
+        config.add_view(wrap(dedupe_dash), route_name="dedupe_dash", request_method="GET")
+        config.add_view(wrap(dedupe_rows), route_name="dedupe_rows", request_method="GET")
+        config.add_view(wrap(dedupe_item), route_name="dedupe_item", request_method="GET")
 
 
         return config.make_wsgi_app()
